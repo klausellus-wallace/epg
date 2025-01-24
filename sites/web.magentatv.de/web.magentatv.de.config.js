@@ -46,7 +46,7 @@ module.exports = {
       programs.push({
         title: item.name,
         description: item.introduce,
-        image: parseImage(item),
+        images: parseImages(item),
         category: parseCategory(item),
         start: parseStart(item),
         stop: parseStop(item),
@@ -58,7 +58,9 @@ module.exports = {
         adapters: parseAdapters(item),
         country: upperCase(item.country),
         date: item.producedate,
-        urls: parseUrls(item)
+        urls: parseUrls(item),
+        episodeNumbers: parseEpisodeNumbers(item),
+        icon: parseIcon(parseImages(item))
       })
     })
     return programs
@@ -142,10 +144,30 @@ function parseUrls(item) {
     .map(externalId => ({ system: 'imdb', value: `https://www.imdb.com/title/${externalId.id}` }))
 }
 
-function parseImage(item) {
+function parseEpisodeNumbers(item) {
+  // currently only a imdb id is returned by the api, thus we can construct the episode number field for the series
+  if (!item.externalIds) return [];
+  return JSON.parse(item.externalIds)
+    .filter(externalId => externalId.type === 'imdb' && externalId.id)
+    .map(externalId => ({ system: 'imdb.com', value: `series/${externalId.id}` }))
+}
+
+function parseImages(item) {
   if (!Array.isArray(item.pictures) || !item.pictures.length) return null
 
-  return item.pictures[0].href
+  return item.pictures
+    .filter((image) => image.imageType === "17") // imageType 17 => Posters in widescreen
+      .map((picture) => {
+      return {
+        type: 'poster',
+        value: picture.href.replace("http://", "https://")
+      }
+    }
+  )
+}
+
+function parseIcon(images) {
+  return images && images.length ? images[0].value : null
 }
 
 function parseStart(item) {

@@ -15,6 +15,13 @@
           "imageType": "1",
           "mimeType": "image/jpeg",
           "resolution": ["1440", "1080"]
+        },
+        {
+          "rel": "image",
+          "href": "http://ngiss.t-online.de/cm1s/media/gracenote/2/4/p24832950_e_h9_aa_2023-06-22T10_12_01.jpg",
+          "imageType": "17",
+          "mimeType": "image/jpeg",
+          "resolution": ["1920", "1080"]
         }
       ]
     },

@@ -92,9 +92,14 @@ it('can parse response', () => {
       title: 'Twenty Foot Plus',
       description:
         'Die besten Big-Wave-Surfer werden bei ihrer Suche nach der nächsten großen Welle begleitet.',
-      image:
-        'http://ngiss.t-online.de/cm1s/media/gracenote/2/4/p24832950_e_h9_aa_2023-06-22T10_12_01.jpg',
-      category: ['Sport']
+      images: [
+        {
+          type: 'poster',
+          value: 'https://ngiss.t-online.de/cm1s/media/gracenote/2/4/p24832950_e_h9_aa_2023-06-22T10_12_01.jpg'
+        }
+      ],
+      category: ['Sport'],
+      icon: 'https://ngiss.t-online.de/cm1s/media/gracenote/2/4/p24832950_e_h9_aa_2023-06-22T10_12_01.jpg'
     },
     {
       start: '2024-11-05T15:37:03.000Z',
@@ -105,8 +110,12 @@ it('can parse response', () => {
         'Amy arbeitet für eine Weile in Sheldons Universität, er freut sich darüber, doch sie warnt ihn, dass sie sich jetzt häufiger zu Gesicht bekommen. Als Leonard, Sheldon, Raj und Howard zusammen sitzen, diskutieren sie darüber. Sheldon lässt auf sich einreden und informiert Amy, dass er ein Problem mit ihr auf seiner Arbeit hat. Sie ist enttäuscht, während Bernadette mit Howard darüber spricht, warum er auf Sheldon eingeredet hat.',
       season: '7',
       episode: '5',
-      image:
-        'http://ngiss.t-online.de/cm1s/media/gracenote/1/0/p10262968_e_h9_ah_2021-10-20T07_16_16.jpg',
+      images: [
+        {
+          type: 'poster',
+          value: 'https://ngiss.t-online.de/cm1s/media/gracenote/1/0/p10262968_e_h10_ac_2021-10-20T07_07_06.jpg' 
+        }
+      ],
       category: ['Sitcom'],
       directors: ['Mark Cendrowski'],
       producers: ['Chuck Lorre', 'Bill Prady', 'Steven Molaro'],
@@ -125,7 +134,12 @@ it('can parse response', () => {
           system: 'imdb',
           value: 'https://www.imdb.com/title/tt0898266'
         }
-      ]
+      ],
+      episodeNumbers: [{
+        system: 'imdb.com',
+        value: 'series/tt0898266'
+      }],
+      icon: 'https://ngiss.t-online.de/cm1s/media/gracenote/1/0/p10262968_e_h10_ac_2021-10-20T07_07_06.jpg'
     }
   ])
 })
