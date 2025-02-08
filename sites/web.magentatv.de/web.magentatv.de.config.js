@@ -8,6 +8,9 @@ let X_CSRFTOKEN
 let Cookie
 const cookiesToExtract = ['JSESSIONID', 'CSESSIONID', 'CSRFSESSION']
 
+// TMDB API Key
+const tmdbBearer = process.env.TMDBBEARER
+
 dayjs.extend(utc)
 dayjs.extend(customParseFormat)
 
@@ -39,10 +42,10 @@ module.exports = {
       }
     }
   },
-  parser({ content }) {
+  async parser({ content }) {
     const programs = []
     const items = parseItems(content)
-    items.forEach(item => {
+    for (const item of items) {
       programs.push({
         title: item.name,
         description: item.introduce,
@@ -56,13 +59,15 @@ module.exports = {
         directors: parseDirectors(item),
         producers: parseProducers(item),
         adapters: parseAdapters(item),
+        actors: parseActors(item),
         country: upperCase(item.country),
         date: item.producedate,
+        live: item.isLive === '1',
         urls: parseUrls(item),
-        episodeNumbers: parseEpisodeNumbers(item),
+        episodeNumbers: await parseEpisodeNumbers(item),
         icon: parseIcon(parseImages(item))
       })
-    })
+    }
     return programs
   },
   async channels() {
@@ -104,12 +109,17 @@ module.exports = {
 }
 
 function parseCategory(item) {
-  return item.genres
+  const isMovie = JSON.parse(item.externalIds).filter(externalId => externalId.type === 'gnProgram' && externalId.id)[0]?.id.startsWith('MV')
+  const genres = item.genres
     ? item.genres
         .replace('und', ',')
         .split(',')
         .map(i => i.trim())
     : []
+  if (isMovie) {
+    genres.push('movie')
+  }
+  return genres
 }
 
 function parseDirectors(item) {
@@ -136,6 +146,17 @@ function parseAdapters(item) {
     .map(i => i.trim())
 }
 
+function parseActors(item) {
+  // TODO: get roles from fclist
+  // cast.castCode': 'gnp_1650' -> fclist.actorID
+  // 
+  if (!item.cast || !item.cast.actor) return []
+  return item.cast.actor
+    .replace('und', ',')
+    .split(',')
+    .map(i => i.trim())
+}
+
 function parseUrls(item) {
   // currently only a imdb id is returned by the api, thus we can construct the url here
   if (!item.externalIds) return []
@@ -144,26 +165,86 @@ function parseUrls(item) {
     .map(externalId => ({ system: 'imdb', value: `https://www.imdb.com/title/${externalId.id}` }))
 }
 
-function parseEpisodeNumbers(item) {
+async function parseEpisodeNumbers(item) {
   // currently only a imdb id is returned by the api, thus we can construct the episode number field for the series
-  if (!item.externalIds) return [];
-  return JSON.parse(item.externalIds)
-    .filter(externalId => externalId.type === 'imdb' && externalId.id)
-    .map(externalId => ({ system: 'imdb.com', value: `series/${externalId.id}` }))
+  if (!item.externalIds) return []
+  let episodeNumbers = []
+  for (const externalId of JSON.parse(item.externalIds).filter(externalId => externalId.type === 'imdb' && externalId.id)){
+      const tmdbSeriesId = await getTMDBSeriesId(externalId.id)
+      const tmdbEpisodeId = (tmdbSeriesId && item.seasonNum && item.subNum) ? await getTMDBEpisodeId(tmdbSeriesId, item.seasonNum, item.subNum) : null
+      episodeNumbers.push(
+        [
+          { system: 'xmltv_ns', value: (item.subNum && item.seasonNum) ? `${Number(item.seasonNum) - 1}.${Number(item.subNum) - 1}` : null},
+          { system: 'imdb.com', value: `series/${externalId.id}` },
+          { system: 'themoviedb.org', value: tmdbSeriesId ? `series/${tmdbSeriesId}` : null },
+          { system: 'themoviedb.org', value: tmdbEpisodeId ? `episode/${tmdbEpisodeId}` : null }
+        ])
+    };
+    return episodeNumbers.flat()
 }
 
 function parseImages(item) {
   if (!Array.isArray(item.pictures) || !item.pictures.length) return null
 
   return item.pictures
-    .filter((image) => image.imageType === "17") // imageType 17 => Posters in widescreen
+    .filter((image) => image.imageType === '17' || image.imageType === '18') // imageType 17 => Posters in widescreen; imageType 18 => Poster w/ title
       .map((picture) => {
       return {
         type: 'poster',
-        value: picture.href.replace("http://", "https://")
+        value: picture.href.replace('http://', 'https://')
       }
     }
   )
+}
+
+let imdbIdTmdbMap = new Map()
+
+async function getTMDBSeriesId(imdbId) {
+  if (imdbIdTmdbMap.get(imdbId)) {
+    return imdbIdTmdbMap.get(imdbId)
+  }
+  const options = {
+    method: 'GET',
+    url: `https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id`,
+    headers: {
+      accept: 'application/json',
+      Authorization: `Bearer ${tmdbBearer}`
+    }
+  }
+  
+  const res = await axios.request(options)
+  
+  if (res.data.tv_results?.length > 0 && res.data.tv_results[0].id) {
+    imdbIdTmdbMap.set(imdbId, res.data.tv_results[0].id)
+  } else if (res.data.tv_episode_results?.length > 0 && res.data.tv_episode_results[0].id) {
+    imdbIdTmdbMap.set(imdbId, res.data.tv_episode_results[0].id)
+  } else if (res.data.tv_season_results?.length > 0 && res.data.tv_season_results[0].id) {
+      imdbIdTmdbMap.set(imdbId, res.data.tv_season_results[0].id)
+  } else if (res.data.movie_results?.length > 0 && res.data.movie_results[0].id) {
+    imdbIdTmdbMap.set(imdbId, res.data.movie_results[0].id)
+  } else {
+    console.log('no results found for imdbId: ' + imdbId)
+  }
+  return imdbIdTmdbMap.get(imdbId)
+}
+
+let tmdbEpisodeIdMap = new Map()
+async function getTMDBEpisodeId(tmdbId, seasonNum, episodeNum) {
+  if (tmdbEpisodeIdMap.get(`${tmdbId}${seasonNum}${episodeNum}`)) {
+    return tmdbEpisodeIdMap.get(`${tmdbId}${seasonNum}${episodeNum}`)
+  }
+  const options = {
+    method: 'GET',
+    url: `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNum}/episode/${episodeNum}`,
+    headers: {
+      accept: 'application/json',
+      Authorization: `Bearer ${tmdbBearer}`
+    }
+  }
+  
+  const res = await axios.request(options)
+  tmdbEpisodeIdMap.set(`${tmdbId}${seasonNum}${episodeNum}`, res.data.id)
+  return tmdbEpisodeIdMap.get(`${tmdbId}${seasonNum}${episodeNum}`)
 }
 
 function parseIcon(images) {
