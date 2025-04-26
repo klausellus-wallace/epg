@@ -44,29 +44,36 @@ module.exports = {
   },
   async parser({ content }) {
     const programs = []
-    const items = parseItems(content)
-    for (const item of items) {
-      programs.push({
-        title: item.name,
-        description: item.introduce,
-        images: parseImages(item),
-        category: parseCategory(item),
-        start: parseStart(item),
-        stop: parseStop(item),
-        sub_title: item.subName,
-        season: item.seasonNum,
-        episode: item.subNum,
-        directors: parseDirectors(item),
-        producers: parseProducers(item),
-        adapters: parseAdapters(item),
-        actors: parseActors(item),
-        country: upperCase(item.country),
-        date: item.producedate,
-        live: item.isLive === '1',
-        urls: parseUrls(item),
-        episodeNumbers: await parseEpisodeNumbers(item),
-        icon: parseIcon(parseImages(item))
-      })
+    try {
+      const items = parseItems(content)
+      for (const item of items) {
+        programs.push({
+          title: item.name,
+          description: item.introduce,
+          images: parseImages(item),
+          category: parseCategory(item),
+          start: parseStart(item),
+          stop: parseStop(item),
+          sub_title: item.subName,
+          season: item.seasonNum,
+          episode: item.subNum,
+          directors: parseDirectors(item),
+          producers: parseProducers(item),
+          adapters: parseAdapters(item),
+          actors: parseActors(item),
+          country: upperCase(item.country),
+          date: item.producedate,
+          live: item.isLive === '1',
+          urls: parseUrls(item),
+          episodeNumbers: await parseEpisodeNumbers(item),
+          icon: parseIcon(parseImages(item))
+        })
+      }
+      if (programs.length === 0) {
+        console.log('No programs found')
+      }
+    } catch (error) {
+      console.error('Error parsing programs:', error.message)
     }
     return programs
   },
@@ -266,6 +273,18 @@ function parseItems(content) {
   return data.playbilllist
 }
 
+function genMAC(){
+  var hexDigits = '0123456789ABCDEF'
+  var macAddress = ''
+  for (var i = 0; i < 6; i++) {
+      macAddress+=hexDigits.charAt(Math.round(Math.random() * 15))
+      macAddress+=hexDigits.charAt(Math.round(Math.random() * 15))
+      if (i != 5) macAddress += ':'
+  }
+
+  return macAddress
+}
+
 async function fetchCookieAndToken() {
   // Only fetch the cookies and csrfToken if they are not already set
   if (X_CSRFTOKEN && Cookie) {
@@ -273,6 +292,7 @@ async function fetchCookieAndToken() {
   }
 
   try {
+    const mac = genMAC()
     const response = await axios.request({
       url: 'https://api.prod.sngtv.magentatv.de/EPG/JSON/Authenticate',
       params: {
@@ -280,7 +300,7 @@ async function fetchCookieAndToken() {
         T: 'Windows_chrome_118'
       },
       method: 'POST',
-      data: '{"terminalid":"00:00:00:00:00:00","mac":"00:00:00:00:00:00","terminaltype":"WEBTV","utcEnable":1,"timezone":"Etc/GMT0","userType":3,"terminalvendor":"Unknown"}',
+      data: `{"terminalid":"${mac}","mac":"${mac}","terminaltype":"WEBTV","utcEnable":1,"timezone":"Etc/GMT0","userType":3,"terminalvendor":"Unknown"}`,
     })
 
     // Extract the cookies specified in cookiesToExtract
