@@ -1,9 +1,10 @@
 import { Logger, Timer, Storage, Collection } from '@freearhey/core'
-import { Option, program } from 'commander'
 import { QueueCreator, Job, ChannelsParser } from '../../core'
+import { Option, program } from 'commander'
+import { SITES_DIR } from '../../constants'
 import { Channel } from 'epg-grabber'
 import path from 'path'
-import { SITES_DIR } from '../../constants'
+import { ChannelList } from '../../models'
 
 program
   .addOption(new Option('-s, --site <name>', 'Name of the site to parse'))
@@ -14,7 +15,7 @@ program
     )
   )
   .addOption(new Option('-o, --output <path>', 'Path to output file').default('guide.xml'))
-  .addOption(new Option('-l, --lang <code>', 'Filter channels by language (ISO 639-1 code)'))
+  .addOption(new Option('-l, --lang <codes>', 'Filter channels by languages (ISO 639-1 codes)'))
   .addOption(
     new Option('-t, --timeout <milliseconds>', 'Override the default timeout for each request').env(
       'TIMEOUT'
@@ -44,13 +45,15 @@ program
       .default(false)
       .env('GZIP')
   )
-  .parse(process.argv)
+  .addOption(new Option('--curl', 'Display each request as CURL').default(false).env('CURL'))
+  .parse()
 
-export type GrabOptions = {
+export interface GrabOptions {
   site?: string
   channels?: string
   output: string
   gzip: boolean
+  curl: boolean
   maxConnections: number
   timeout?: string
   delay?: string
@@ -85,27 +88,35 @@ async function main() {
     files = await storage.list(options.channels)
   }
 
-  let parsedChannels = new Collection()
+  let channels = new Collection()
   for (const filepath of files) {
-    parsedChannels = parsedChannels.concat(await parser.parse(filepath))
+    const channelList: ChannelList = await parser.parse(filepath)
+
+    channels = channels.concat(channelList.channels)
   }
+
   if (options.lang) {
-    parsedChannels = parsedChannels.filter((channel: Channel) => channel.lang === options.lang)
+    channels = channels.filter((channel: Channel) => {
+      if (!options.lang || !channel.lang) return true
+
+      return options.lang.includes(channel.lang)
+    })
   }
-  logger.info(`  found ${parsedChannels.count()} channel(s)`)
+
+  logger.info(`  found ${channels.count()} channel(s)`)
 
   logger.info('run:')
-  runJob({ logger, parsedChannels })
+  runJob({ logger, channels })
 }
 
 main()
 
-async function runJob({ logger, parsedChannels }: { logger: Logger; parsedChannels: Collection }) {
+async function runJob({ logger, channels }: { logger: Logger; channels: Collection }) {
   const timer = new Timer()
   timer.start()
 
   const queueCreator = new QueueCreator({
-    parsedChannels,
+    channels,
     logger,
     options
   })
