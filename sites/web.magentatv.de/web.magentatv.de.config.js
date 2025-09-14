@@ -176,18 +176,26 @@ async function parseEpisodeNumbers(item) {
   // currently only a imdb id is returned by the api, thus we can construct the episode number field for the series
   if (!item.externalIds) return []
   let episodeNumbers = []
-  for (const externalId of JSON.parse(item.externalIds).filter(externalId => externalId.type === 'imdb' && externalId.id)){
-      const tmdbSeriesId = await getTMDBSeriesId(externalId.id)
-      const tmdbEpisodeId = (tmdbSeriesId && item.seasonNum && item.subNum) ? await getTMDBEpisodeId(tmdbSeriesId, item.seasonNum, item.subNum) : null
-      episodeNumbers.push(
-        [
-          { system: 'xmltv_ns', value: (item.subNum && item.seasonNum) ? `${Number(item.seasonNum) - 1}.${Number(item.subNum) - 1}` : null},
-          { system: 'imdb.com', value: `series/${externalId.id}` },
-          { system: 'themoviedb.org', value: tmdbSeriesId ? `series/${tmdbSeriesId}` : null },
-          { system: 'themoviedb.org', value: tmdbEpisodeId ? `episode/${tmdbEpisodeId}` : null }
-        ])
-    };
-    return episodeNumbers.flat()
+
+  for (const externalId of JSON.parse(item.externalIds).filter(externalId => externalId.type === 'imdb' && externalId.id)) {
+    const tmdbSeriesId = await getTMDBSeriesId(externalId.id)
+    const tmdbEpisodeId = (tmdbSeriesId && item.seasonNum && item.subNum)
+      ? await getTMDBEpisodeId(tmdbSeriesId, item.seasonNum, item.subNum)
+      : null
+
+    const values = [
+      (item.subNum && item.seasonNum)
+        ? { system: 'xmltv_ns', value: `${Number(item.seasonNum) - 1}.${Number(item.subNum) - 1}.` }
+        : null,
+      { system: 'imdb.com', value: `series/${externalId.id}` },
+      tmdbSeriesId ? { system: 'themoviedb.org', value: `series/${tmdbSeriesId}` } : null,
+      tmdbEpisodeId ? { system: 'themoviedb.org', value: `episode/${tmdbEpisodeId}` } : null
+    ]
+
+    episodeNumbers.push(values.filter(Boolean))
+  }
+
+  return episodeNumbers.flat()
 }
 
 function parseImages(item) {
