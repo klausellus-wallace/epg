@@ -60,10 +60,12 @@ function calculateAdaptiveDelay() {
   const recentFailures = recentRequests.filter(req => !req.success).length
   const recentSuccesses = recentRequests.filter(req => req.success).length
   
-  // If we have recent failures, increase delay
+  // If we have recent failures, increase delay more aggressively for multi-day scenarios
   if (recentFailures > 0) {
     const failureRate = recentFailures / (recentFailures + recentSuccesses)
-    return THROTTLING_CONFIG.requestDelay * (1 + failureRate * 2)
+    // More aggressive scaling for multi-day usage
+    const multiplier = recentFailures > 3 ? 4 : 2 // Higher multiplier for many failures
+    return THROTTLING_CONFIG.requestDelay * (1 + failureRate * multiplier)
   }
   
   // If we have many recent successes, we can reduce delay slightly
