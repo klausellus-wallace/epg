@@ -129,5 +129,17 @@ async function runJob({ logger, channels }: { logger: Logger; channels: Collecti
 
   await job.run()
 
+  // Print TMDB enrichment summary for magenta site
+  if (options.site === 'web.magentatv.de') {
+    try {
+      const magentaConfig = require('../../../sites/web.magentatv.de/web.magentatv.de.config.js')
+      if (magentaConfig.printEnrichmentSummary) {
+        magentaConfig.printEnrichmentSummary()
+      }
+    } catch (error) {
+      // Silently ignore if summary function is not available
+    }
+  }
+
   logger.success(`  done in ${timer.format('HH[h] mm[m] ss[s]')}`)
 }
