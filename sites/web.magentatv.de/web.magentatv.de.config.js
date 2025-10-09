@@ -47,27 +47,42 @@ module.exports = {
     try {
       const items = parseItems(content)
       for (const item of items) {
-        programs.push({
-          title: item.name,
-          description: item.introduce,
-          images: parseImages(item),
-          category: parseCategory(item),
+        const images = parseImages(item)
+        const urls = parseUrls(item)
+        const episodeNumbers = await parseEpisodeNumbers(item)
+        
+        // Validate and clean enriched data for Jellyfin compatibility
+        const program = {
+          title: item.name || 'Unknown Title',
+          description: item.introduce || '',
+          images: images || [],
+          category: parseCategory(item) || [],
           start: parseStart(item),
           stop: parseStop(item),
-          sub_title: item.subName,
-          season: item.seasonNum,
-          episode: item.subNum,
-          directors: parseDirectors(item),
-          producers: parseProducers(item),
-          adapters: parseAdapters(item),
-          actors: parseActors(item),
-          country: upperCase(item.country),
-          date: item.producedate,
+          sub_title: item.subName || null,
+          season: item.seasonNum || null,
+          episode: item.subNum || null,
+          directors: parseDirectors(item) || [],
+          producers: parseProducers(item) || [],
+          adapters: parseAdapters(item) || [],
+          actors: parseActors(item) || [],
+          country: item.country ? upperCase(item.country) : null,
+          date: item.producedate || null,
           live: item.isLive === '1',
-          urls: parseUrls(item),
-          episodeNumbers: await parseEpisodeNumbers(item),
-          icon: parseIcon(parseImages(item))
-        })
+          urls: urls || [],
+          episodeNumbers: episodeNumbers || [],
+          icon: parseIcon(images)
+        }
+        
+        // Ensure episodeNumbers and urls are arrays for XMLTV compatibility
+        if (!Array.isArray(program.episodeNumbers)) {
+          program.episodeNumbers = []
+        }
+        if (!Array.isArray(program.urls)) {
+          program.urls = []
+        }
+        
+        programs.push(program)
       }
       if (programs.length === 0) {
         console.log('No programs found')
@@ -167,9 +182,17 @@ function parseActors(item) {
 function parseUrls(item) {
   // currently only a imdb id is returned by the api, thus we can construct the url here
   if (!item.externalIds) return []
-  return JSON.parse(item.externalIds)
-    .filter(externalId => externalId.type === 'imdb' && externalId.id)
-    .map(externalId => ({ system: 'imdb', value: `https://www.imdb.com/title/${externalId.id}` }))
+  try {
+    return JSON.parse(item.externalIds)
+      .filter(externalId => externalId.type === 'imdb' && externalId.id)
+      .map(externalId => ({ 
+        system: 'imdb.com', 
+        value: `https://www.imdb.com/title/${externalId.id}` 
+      }))
+  } catch (error) {
+    console.error('Error parsing externalIds for URLs:', error.message)
+    return []
+  }
 }
 
 async function parseEpisodeNumbers(item) {
@@ -177,22 +200,33 @@ async function parseEpisodeNumbers(item) {
   if (!item.externalIds) return []
   let episodeNumbers = []
 
-  for (const externalId of JSON.parse(item.externalIds).filter(externalId => externalId.type === 'imdb' && externalId.id)) {
-    const tmdbSeriesId = await getTMDBSeriesId(externalId.id)
-    const tmdbEpisodeId = (tmdbSeriesId && item.seasonNum && item.subNum)
-      ? await getTMDBEpisodeId(tmdbSeriesId, item.seasonNum, item.subNum)
-      : null
+  try {
+    const externalIds = JSON.parse(item.externalIds)
+    
+    for (const externalId of externalIds.filter(externalId => externalId.type === 'imdb' && externalId.id)) {
+      const tmdbSeriesId = await getTMDBSeriesId(externalId.id)
+      const tmdbEpisodeId = (tmdbSeriesId && item.seasonNum && item.subNum)
+        ? await getTMDBEpisodeId(tmdbSeriesId, item.seasonNum, item.subNum)
+        : null
 
-    const values = [
-      (item.subNum && item.seasonNum)
-        ? { system: 'xmltv_ns', value: `${Number(item.seasonNum) - 1}.${Number(item.subNum) - 1}.` }
-        : null,
-      { system: 'imdb.com', value: `series/${externalId.id}` },
-      tmdbSeriesId ? { system: 'themoviedb.org', value: `series/${tmdbSeriesId}` } : null,
-      tmdbEpisodeId ? { system: 'themoviedb.org', value: `episode/${tmdbEpisodeId}` } : null
-    ]
+      const values = [
+        // XMLTV NS format: season.episode. (0-based indexing)
+        (item.subNum && item.seasonNum)
+          ? { system: 'xmltv_ns', value: `${Number(item.seasonNum) - 1}.${Number(item.subNum) - 1}.` }
+          : null,
+        // IMDB series ID
+        { system: 'imdb.com', value: `series/${externalId.id}` },
+        // TMDB series ID
+        tmdbSeriesId ? { system: 'themoviedb.org', value: `series/${tmdbSeriesId}` } : null,
+        // TMDB episode ID
+        tmdbEpisodeId ? { system: 'themoviedb.org', value: `episode/${tmdbEpisodeId}` } : null
+      ]
 
-    episodeNumbers.push(values.filter(Boolean))
+      episodeNumbers.push(values.filter(Boolean))
+    }
+  } catch (error) {
+    console.error('Error parsing episodeNumbers:', error.message)
+    return []
   }
 
   return episodeNumbers.flat()
@@ -215,51 +249,85 @@ function parseImages(item) {
 let imdbIdTmdbMap = new Map()
 
 async function getTMDBSeriesId(imdbId) {
+  if (!imdbId || !tmdbBearer) {
+    console.log('Missing imdbId or TMDB bearer token')
+    return null
+  }
+
   if (imdbIdTmdbMap.get(imdbId)) {
     return imdbIdTmdbMap.get(imdbId)
   }
-  const options = {
-    method: 'GET',
-    url: `https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id`,
-    headers: {
-      accept: 'application/json',
-      Authorization: `Bearer ${tmdbBearer}`
+
+  try {
+    const options = {
+      method: 'GET',
+      url: `https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id`,
+      headers: {
+        accept: 'application/json',
+        Authorization: `Bearer ${tmdbBearer}`
+      },
+      timeout: 10000 // 10 second timeout
     }
-  }
-  
-  const res = await axios.request(options)
-  
-  if (res.data.tv_results?.length > 0 && res.data.tv_results[0].id) {
-    imdbIdTmdbMap.set(imdbId, res.data.tv_results[0].id)
-  } else if (res.data.tv_episode_results?.length > 0 && res.data.tv_episode_results[0].id) {
-    imdbIdTmdbMap.set(imdbId, res.data.tv_episode_results[0].id)
-  } else if (res.data.tv_season_results?.length > 0 && res.data.tv_season_results[0].id) {
+    
+    const res = await axios.request(options)
+    
+    if (res.data.tv_results?.length > 0 && res.data.tv_results[0].id) {
+      imdbIdTmdbMap.set(imdbId, res.data.tv_results[0].id)
+    } else if (res.data.tv_episode_results?.length > 0 && res.data.tv_episode_results[0].id) {
+      imdbIdTmdbMap.set(imdbId, res.data.tv_episode_results[0].id)
+    } else if (res.data.tv_season_results?.length > 0 && res.data.tv_season_results[0].id) {
       imdbIdTmdbMap.set(imdbId, res.data.tv_season_results[0].id)
-  } else if (res.data.movie_results?.length > 0 && res.data.movie_results[0].id) {
-    imdbIdTmdbMap.set(imdbId, res.data.movie_results[0].id)
-  } else {
-    console.log('no results found for imdbId: ' + imdbId)
+    } else if (res.data.movie_results?.length > 0 && res.data.movie_results[0].id) {
+      imdbIdTmdbMap.set(imdbId, res.data.movie_results[0].id)
+    } else {
+      console.log('No TMDB results found for imdbId:', imdbId)
+      imdbIdTmdbMap.set(imdbId, null) // Cache negative result
+    }
+  } catch (error) {
+    console.error('Error fetching TMDB series ID for imdbId:', imdbId, error.message)
+    imdbIdTmdbMap.set(imdbId, null) // Cache negative result
   }
+  
   return imdbIdTmdbMap.get(imdbId)
 }
 
 let tmdbEpisodeIdMap = new Map()
 async function getTMDBEpisodeId(tmdbId, seasonNum, episodeNum) {
-  if (tmdbEpisodeIdMap.get(`${tmdbId}${seasonNum}${episodeNum}`)) {
-    return tmdbEpisodeIdMap.get(`${tmdbId}${seasonNum}${episodeNum}`)
+  if (!tmdbId || !seasonNum || !episodeNum || !tmdbBearer) {
+    console.log('Missing required parameters for TMDB episode lookup')
+    return null
   }
-  const options = {
-    method: 'GET',
-    url: `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNum}/episode/${episodeNum}`,
-    headers: {
-      accept: 'application/json',
-      Authorization: `Bearer ${tmdbBearer}`
+
+  const cacheKey = `${tmdbId}${seasonNum}${episodeNum}`
+  if (tmdbEpisodeIdMap.get(cacheKey)) {
+    return tmdbEpisodeIdMap.get(cacheKey)
+  }
+
+  try {
+    const options = {
+      method: 'GET',
+      url: `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNum}/episode/${episodeNum}`,
+      headers: {
+        accept: 'application/json',
+        Authorization: `Bearer ${tmdbBearer}`
+      },
+      timeout: 10000 // 10 second timeout
     }
+    
+    const res = await axios.request(options)
+    
+    if (res.data && res.data.id) {
+      tmdbEpisodeIdMap.set(cacheKey, res.data.id)
+    } else {
+      console.log('No TMDB episode ID found for:', { tmdbId, seasonNum, episodeNum })
+      tmdbEpisodeIdMap.set(cacheKey, null) // Cache negative result
+    }
+  } catch (error) {
+    console.error('Error fetching TMDB episode ID:', error.message)
+    tmdbEpisodeIdMap.set(cacheKey, null) // Cache negative result
   }
   
-  const res = await axios.request(options)
-  tmdbEpisodeIdMap.set(`${tmdbId}${seasonNum}${episodeNum}`, res.data.id)
-  return tmdbEpisodeIdMap.get(`${tmdbId}${seasonNum}${episodeNum}`)
+  return tmdbEpisodeIdMap.get(cacheKey)
 }
 
 function parseIcon(images) {
