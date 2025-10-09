@@ -1,5 +1,5 @@
 import { Logger, Timer, Storage, Collection } from '@freearhey/core'
-import { QueueCreator, Job, ChannelsParser } from '../../core'
+import { QueueCreator, Job, ChannelsParser, TVHeadendFetcher, XMLTVMerger } from '../../core'
 import { Option, program } from 'commander'
 import { SITES_DIR } from '../../constants'
 import { Channel } from 'epg-grabber'
@@ -46,6 +46,12 @@ program
       .env('GZIP')
   )
   .addOption(new Option('--curl', 'Display each request as CURL').default(false).env('CURL'))
+  .addOption(new Option('--tvheadend-host <host>', 'TVHeadend server host').env('TVHEADEND_HOST'))
+  .addOption(new Option('--tvheadend-port <port>', 'TVHeadend server port').default(9981).env('TVHEADEND_PORT'))
+  .addOption(new Option('--tvheadend-username <username>', 'TVHeadend username').env('TVHEADEND_USERNAME'))
+  .addOption(new Option('--tvheadend-password <password>', 'TVHeadend password').env('TVHEADEND_PASSWORD'))
+  .addOption(new Option('--tvheadend-timeout <milliseconds>', 'TVHeadend request timeout').default(30000).env('TVHEADEND_TIMEOUT'))
+  .addOption(new Option('--enable-tvheadend', 'Enable TVHeadend enrichment').default(false).env('ENABLE_TVHEADEND'))
   .parse()
 
 export interface GrabOptions {
@@ -60,6 +66,12 @@ export interface GrabOptions {
   lang?: string
   days?: number
   proxy?: string
+  tvheadendHost?: string
+  tvheadendPort: number
+  tvheadendUsername?: string
+  tvheadendPassword?: string
+  tvheadendTimeout: number
+  enableTvheadend: boolean
 }
 
 const options: GrabOptions = program.opts()
@@ -127,7 +139,59 @@ async function runJob({ logger, channels }: { logger: Logger; channels: Collecti
     options
   })
 
+  // Run the main EPG grab job
   await job.run()
+
+  // Enrich with TVHeadend data if enabled
+  if (options.enableTvheadend && options.tvheadendHost) {
+    logger.info('Enriching with TVHeadend data...')
+    
+    try {
+      const tvheadendConfig = {
+        host: options.tvheadendHost,
+        port: options.tvheadendPort,
+        username: options.tvheadendUsername,
+        password: options.tvheadendPassword,
+        timeout: options.tvheadendTimeout
+      }
+
+      const tvheadendFetcher = new TVHeadendFetcher({
+        config: tvheadendConfig,
+        logger
+      })
+
+      // Test connection first
+      const isConnected = await tvheadendFetcher.testConnection()
+      if (!isConnected) {
+        logger.warn('TVHeadend server is not reachable, skipping enrichment')
+      } else {
+        // Fetch TVHeadend data
+        const tvheadendData = await tvheadendFetcher.fetchXMLTV()
+        
+        // Merge the data
+        const merger = new XMLTVMerger({ logger })
+        const mergedData = merger.enrich(
+          job.channels,
+          job.programs,
+          new Collection(tvheadendData.channels),
+          new Collection(tvheadendData.programs)
+        )
+
+        // Update job data with merged results
+        job.channels = mergedData.channels
+        job.programs = mergedData.programs
+
+        // Regenerate guides with enriched data
+        logger.info('Regenerating guides with enriched data...')
+        await job.createGuides()
+
+        logger.success('TVHeadend enrichment completed successfully')
+      }
+    } catch (error) {
+      logger.error(`TVHeadend enrichment failed: ${error.message}`)
+      logger.info('Continuing with API data only...')
+    }
+  }
 
   logger.success(`  done in ${timer.format('HH[h] mm[m] ss[s]')}`)
 }
