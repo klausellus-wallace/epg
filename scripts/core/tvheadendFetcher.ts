@@ -81,20 +81,27 @@ export class TVHeadendFetcher {
       
       // Convert plain objects to Program instances
       const programInstances = programs.map(programData => {
+        // Ensure the channel property is set
+        const channelId = programData.channel || 'unknown'
+        
         // Find the corresponding channel for this program
-        const channelData = channels.find(ch => ch.id === programData.channel)
+        const channelData = channels.find(ch => ch.id === channelId)
         if (!channelData) {
           // Create a dummy channel if not found
           const dummyChannel = new Channel({ 
-            id: programData.channel, 
-            name: programData.channel 
+            id: channelId, 
+            name: channelId 
           })
-          return new Program(programData, dummyChannel)
+          const program = new Program({ ...programData, channel: channelId }, dummyChannel)
+          program.channel = channelId  // Explicitly set the channel property
+          return program
         }
         
         // Create channel instance
         const channelInstance = new Channel(channelData)
-        return new Program(programData, channelInstance)
+        const program = new Program({ ...programData, channel: channelId }, channelInstance)
+        program.channel = channelId  // Explicitly set the channel property
+        return program
       })
       
       this.logger.info(`Parsed ${channels.length} channels and ${programInstances.length} programs from TVHeadend`)
