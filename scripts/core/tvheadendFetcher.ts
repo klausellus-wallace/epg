@@ -9,6 +9,7 @@ interface TVHeadendConfig {
   username?: string
   password?: string
   timeout?: number
+  protocol?: 'http' | 'https'
 }
 
 interface TVHeadendFetcherProps {
@@ -24,7 +25,15 @@ export class TVHeadendFetcher {
   constructor({ config, logger }: TVHeadendFetcherProps) {
     this.config = config
     this.logger = logger
-    this.baseUrl = `http://${config.host}:${config.port}`
+    const protocol = config.protocol || 'http'
+    
+    // Use default ports if not specified
+    let port = config.port
+    if (!port) {
+      port = protocol === 'https' ? 443 : 9981
+    }
+    
+    this.baseUrl = `${protocol}://${config.host}:${port}`
   }
 
   /**
@@ -55,15 +64,44 @@ export class TVHeadendFetcher {
       // Parse the XMLTV data
       const parsed = parser.parse(response.data)
       
-      // Extract channels and programs from the parsed data
-      const channels = parsed.channels || []
-      const programs = parsed.programs || []
+      // Debug: Log the structure of parsed data
+      this.logger.info(`Parsed data structure:`, {
+        hasChannels: !!parsed.channels,
+        hasPrograms: !!parsed.programs,
+        channelsType: typeof parsed.channels,
+        programsType: typeof parsed.programs,
+        channelsLength: Array.isArray(parsed.channels) ? parsed.channels.length : 'not array',
+        programsLength: Array.isArray(parsed.programs) ? parsed.programs.length : 'not array'
+      })
       
-      this.logger.info(`Parsed ${channels.length} channels and ${programs.length} programs from TVHeadend`)
+      // Extract channels and programs from the parsed data
+      // epg-parser returns objects, not arrays, so we need to convert them
+      const channels = Array.isArray(parsed.channels) ? parsed.channels : Object.values(parsed.channels || {})
+      const programs = Array.isArray(parsed.programs) ? parsed.programs : Object.values(parsed.programs || {})
+      
+      // Convert plain objects to Program instances
+      const programInstances = programs.map(programData => {
+        // Find the corresponding channel for this program
+        const channelData = channels.find(ch => ch.id === programData.channel)
+        if (!channelData) {
+          // Create a dummy channel if not found
+          const dummyChannel = new Channel({ 
+            id: programData.channel, 
+            name: programData.channel 
+          })
+          return new Program(programData, dummyChannel)
+        }
+        
+        // Create channel instance
+        const channelInstance = new Channel(channelData)
+        return new Program(programData, channelInstance)
+      })
+      
+      this.logger.info(`Parsed ${channels.length} channels and ${programInstances.length} programs from TVHeadend`)
       
       return {
-        channels,
-        programs
+        channels: channels.map(channelData => new Channel(channelData)),
+        programs: programInstances
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)

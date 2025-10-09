@@ -33,6 +33,14 @@ export class Job {
     await this.createGuides()
   }
 
+  async runWithoutGuides() {
+    const { channels, programs } = await this.grabber.grab()
+    
+    // Store the data for potential enrichment
+    this.channels = channels
+    this.programs = programs
+  }
+
   async createGuides() {
     const manager = new GuideManager({
       channels: this.channels,

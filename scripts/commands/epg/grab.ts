@@ -47,10 +47,11 @@ program
   )
   .addOption(new Option('--curl', 'Display each request as CURL').default(false).env('CURL'))
   .addOption(new Option('--tvheadend-host <host>', 'TVHeadend server host').env('TVHEADEND_HOST'))
-  .addOption(new Option('--tvheadend-port <port>', 'TVHeadend server port').default(9981).env('TVHEADEND_PORT'))
+  .addOption(new Option('--tvheadend-port <port>', 'TVHeadend server port (default: 9981 for HTTP, 443 for HTTPS)').env('TVHEADEND_PORT'))
   .addOption(new Option('--tvheadend-username <username>', 'TVHeadend username').env('TVHEADEND_USERNAME'))
   .addOption(new Option('--tvheadend-password <password>', 'TVHeadend password').env('TVHEADEND_PASSWORD'))
   .addOption(new Option('--tvheadend-timeout <milliseconds>', 'TVHeadend request timeout').default(30000).env('TVHEADEND_TIMEOUT'))
+  .addOption(new Option('--tvheadend-protocol <protocol>', 'TVHeadend protocol (http or https)').default('http').env('TVHEADEND_PROTOCOL'))
   .addOption(new Option('--enable-tvheadend', 'Enable TVHeadend enrichment').default(false).env('ENABLE_TVHEADEND'))
   .parse()
 
@@ -67,10 +68,11 @@ export interface GrabOptions {
   days?: number
   proxy?: string
   tvheadendHost?: string
-  tvheadendPort: number
+  tvheadendPort?: number
   tvheadendUsername?: string
   tvheadendPassword?: string
   tvheadendTimeout: number
+  tvheadendProtocol: string
   enableTvheadend: boolean
 }
 
@@ -139,8 +141,8 @@ async function runJob({ logger, channels }: { logger: Logger; channels: Collecti
     options
   })
 
-  // Run the main EPG grab job
-  await job.run()
+  // Run the main EPG grab job to fetch API data but don't create guides yet
+  await job.runWithoutGuides()
 
   // Enrich with TVHeadend data if enabled
   if (options.enableTvheadend && options.tvheadendHost) {
@@ -152,7 +154,8 @@ async function runJob({ logger, channels }: { logger: Logger; channels: Collecti
         port: options.tvheadendPort,
         username: options.tvheadendUsername,
         password: options.tvheadendPassword,
-        timeout: options.tvheadendTimeout
+        timeout: options.tvheadendTimeout,
+        protocol: options.tvheadendProtocol as 'http' | 'https'
       }
 
       const tvheadendFetcher = new TVHeadendFetcher({
@@ -181,10 +184,6 @@ async function runJob({ logger, channels }: { logger: Logger; channels: Collecti
         job.channels = mergedData.channels
         job.programs = mergedData.programs
 
-        // Regenerate guides with enriched data
-        logger.info('Regenerating guides with enriched data...')
-        await job.createGuides()
-
         logger.success('TVHeadend enrichment completed successfully')
       }
     } catch (error) {
@@ -192,6 +191,10 @@ async function runJob({ logger, channels }: { logger: Logger; channels: Collecti
       logger.info('Continuing with API data only...')
     }
   }
+
+  // Create guides with the final data (API only or enriched)
+  logger.info('Creating guides with final data...')
+  await job.createGuides()
 
   logger.success(`  done in ${timer.format('HH[h] mm[m] ss[s]')}`)
 }

@@ -29,39 +29,42 @@ export class XMLTVMerger {
     
     this.logger.info('Starting XMLTV merge process...')
     
-    // Start with API channels as base
+    // Start with API channels as base - clone the existing collections
     const mergedChannels = new Collection(apiChannels.all())
     const mergedPrograms = new Collection(apiPrograms.all())
     
     // Track which channels already exist from API
-    const existingChannelIds = new Set(
-      apiChannels.map((channel: Channel) => channel.xmltv_id).filter(Boolean)
-    )
+    const existingChannelIds = new Set()
+    for (const channel of apiChannels.all()) {
+      if (channel.xmltv_id) {
+        existingChannelIds.add(channel.xmltv_id)
+      }
+    }
     
     // Add TVHeadend channels that don't exist in API data
     let addedChannels = 0
-    tvheadendChannels.forEach((channel: Channel) => {
+    for (const channel of tvheadendChannels.all()) {
       if (channel.xmltv_id && !existingChannelIds.has(channel.xmltv_id)) {
         mergedChannels.add(channel)
         addedChannels++
       }
-    })
+    }
     
     this.logger.info(`Added ${addedChannels} channels from TVHeadend`)
     
     // Track existing programs by channel and time slot
     const existingPrograms = new Map<string, Set<string>>()
-    apiPrograms.forEach((program: Program) => {
+    for (const program of apiPrograms.all()) {
       const key = `${program.channel}:${program.start}:${program.stop}`
       if (!existingPrograms.has(program.channel)) {
         existingPrograms.set(program.channel, new Set())
       }
       existingPrograms.get(program.channel)!.add(key)
-    })
+    }
     
     // Add TVHeadend programs that don't conflict with API programs
     let addedPrograms = 0
-    tvheadendPrograms.forEach((program: Program) => {
+    for (const program of tvheadendPrograms.all()) {
       const key = `${program.channel}:${program.start}:${program.stop}`
       const channelPrograms = existingPrograms.get(program.channel)
       
@@ -75,7 +78,7 @@ export class XMLTVMerger {
         }
         existingPrograms.get(program.channel)!.add(key)
       }
-    })
+    }
     
     this.logger.info(`Added ${addedPrograms} programs from TVHeadend`)
     this.logger.info(`Final result: ${mergedChannels.count()} channels, ${mergedPrograms.count()} programs`)
@@ -99,56 +102,67 @@ export class XMLTVMerger {
     
     this.logger.info('Starting XMLTV enrichment process...')
     
-    // Start with API data
+    // Debug: Log collection types and sizes
+    this.logger.info('Collection debug info:', {
+      apiChannelsType: typeof apiChannels,
+      apiChannelsCount: apiChannels.count(),
+      apiProgramsType: typeof apiPrograms,
+      apiProgramsCount: apiPrograms.count(),
+      tvheadendChannelsType: typeof tvheadendChannels,
+      tvheadendChannelsCount: tvheadendChannels.count(),
+      tvheadendProgramsType: typeof tvheadendPrograms,
+      tvheadendProgramsCount: tvheadendPrograms.count()
+    })
+    
+    // Start with API data - clone the existing collections
     const enrichedChannels = new Collection(apiChannels.all())
     const enrichedPrograms = new Collection(apiPrograms.all())
     
     // Create lookup maps for efficient searching
-    const apiChannelMap = new Map(
-      apiChannels.map((channel: Channel) => [channel.xmltv_id, channel])
-    )
+    const apiChannelMap = new Map()
+    for (const channel of apiChannels.all()) {
+      if (channel.xmltv_id) {
+        apiChannelMap.set(channel.xmltv_id, channel)
+      }
+    }
     
     const apiProgramMap = new Map<string, Program[]>()
-    apiPrograms.forEach((program: Program) => {
+    for (const program of apiPrograms.all()) {
       if (!apiProgramMap.has(program.channel)) {
         apiProgramMap.set(program.channel, [])
       }
       apiProgramMap.get(program.channel)!.push(program)
-    })
+    }
     
     // Add missing channels from TVHeadend
     let addedChannels = 0
-    if (Array.isArray(tvheadendChannels.all())) {
-      tvheadendChannels.forEach((channel: Channel) => {
-        if (channel.xmltv_id && !apiChannelMap.has(channel.xmltv_id)) {
-          enrichedChannels.add(channel)
-          addedChannels++
-        }
-      })
+    for (const channel of tvheadendChannels.all()) {
+      if (channel.xmltv_id && !apiChannelMap.has(channel.xmltv_id)) {
+        enrichedChannels.add(channel)
+        addedChannels++
+      }
     }
     
     // Add programs for channels that have no API data
     let addedPrograms = 0
-    if (Array.isArray(tvheadendPrograms.all())) {
-      tvheadendPrograms.forEach((program: Program) => {
-        const apiProgramsForChannel = apiProgramMap.get(program.channel) || []
+    for (const program of tvheadendPrograms.all()) {
+      const apiProgramsForChannel = apiProgramMap.get(program.channel) || []
+      
+      // If no API programs exist for this channel, add all TVHeadend programs
+      if (apiProgramsForChannel.length === 0) {
+        enrichedPrograms.add(program)
+        addedPrograms++
+      } else {
+        // Check if this time slot is covered by API data
+        const hasOverlap = apiProgramsForChannel.some(apiProgram => 
+          this.programsOverlap(apiProgram, program)
+        )
         
-        // If no API programs exist for this channel, add all TVHeadend programs
-        if (apiProgramsForChannel.length === 0) {
+        if (!hasOverlap) {
           enrichedPrograms.add(program)
           addedPrograms++
-        } else {
-          // Check if this time slot is covered by API data
-          const hasOverlap = apiProgramsForChannel.some(apiProgram => 
-            this.programsOverlap(apiProgram, program)
-          )
-          
-          if (!hasOverlap) {
-            enrichedPrograms.add(program)
-            addedPrograms++
-          }
         }
-      })
+      }
     }
     
     this.logger.info(`Enriched with ${addedChannels} channels and ${addedPrograms} programs from TVHeadend`)

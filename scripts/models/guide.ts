@@ -27,8 +27,8 @@ export class Guide {
     })
 
     return generateXMLTV({
-      channels: this.channels.all(),
-      programs: this.programs.all(),
+      channels: Array.from(this.channels.all()),
+      programs: Array.from(this.programs.all()),
       date: currDate.toJSON()
     })
   }
