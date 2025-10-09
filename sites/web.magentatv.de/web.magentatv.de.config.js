@@ -11,13 +11,78 @@ const cookiesToExtract = ['JSESSIONID', 'CSESSIONID', 'CSRFSESSION']
 // TMDB API Key
 const tmdbBearer = process.env.TMDBBEARER
 
+// Throttling configuration
+const THROTTLING_CONFIG = {
+  requestDelay: 500 // 500ms delay between requests
+}
+
+// Request tracking for adaptive delays
+let requestTracker = {
+  recentRequests: [],
+  successCount: 0,
+  failureCount: 0
+}
+
 dayjs.extend(utc)
 dayjs.extend(customParseFormat)
+
+// Utility functions for throttling and retry logic
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function recordRequestSuccess() {
+  requestTracker.successCount++
+  requestTracker.recentRequests.push({ timestamp: Date.now(), success: true })
+  
+  // Keep only last 10 requests for tracking
+  if (requestTracker.recentRequests.length > 10) {
+    requestTracker.recentRequests = requestTracker.recentRequests.slice(-10)
+  }
+}
+
+function recordRequestFailure() {
+  requestTracker.failureCount++
+  requestTracker.recentRequests.push({ timestamp: Date.now(), success: false })
+  
+  // Keep only last 10 requests for tracking
+  if (requestTracker.recentRequests.length > 10) {
+    requestTracker.recentRequests = requestTracker.recentRequests.slice(-10)
+  }
+}
+
+function calculateAdaptiveDelay() {
+  const now = Date.now()
+  const recentRequests = requestTracker.recentRequests.filter(
+    req => now - req.timestamp < 60000 // Last minute
+  )
+  
+  const recentFailures = recentRequests.filter(req => !req.success).length
+  const recentSuccesses = recentRequests.filter(req => req.success).length
+  
+  // If we have recent failures, increase delay
+  if (recentFailures > 0) {
+    const failureRate = recentFailures / (recentFailures + recentSuccesses)
+    return THROTTLING_CONFIG.requestDelay * (1 + failureRate * 2)
+  }
+  
+  // If we have many recent successes, we can reduce delay slightly
+  if (recentSuccesses > 5) {
+    return Math.max(THROTTLING_CONFIG.requestDelay * 0.5, 200)
+  }
+  
+  return THROTTLING_CONFIG.requestDelay
+}
+
 
 module.exports = {
   site: 'web.magentatv.de',
   days: 2,
   url: 'https://api.prod.sngtv.magentatv.de/EPG/JSON/PlayBillList',
+  // Dynamic delay based on throttling state
+  get delay() {
+    return calculateAdaptiveDelay()
+  },
   request: {
     method: 'POST',
     async headers() {
@@ -42,10 +107,24 @@ module.exports = {
       }
     }
   },
-  async parser({ content }) {
+  async parser({ content, channel, date }) {
     const programs = []
     try {
       const items = parseItems(content)
+      
+      // Check for throttling (empty program list)
+      if (items.length === 0) {
+        console.warn(`Empty program list for channel ${channel?.site_id} on ${date} - possible throttling`)
+        recordRequestFailure()
+        
+        // If this is a throttled response, we could retry here
+        // But since we're in the parser, we'll just return empty and let the delay system handle it
+        return programs
+      } else {
+        recordRequestSuccess()
+        console.log(`Successfully parsed ${items.length} programs for channel ${channel?.site_id}`)
+      }
+      
       for (const item of items) {
         try {
           const images = parseImages(item)
@@ -168,22 +247,50 @@ module.exports = {
       ],
       returnSatChannel: 0
     }
+    
+    const headers = await setHeaders()
     const params = {
-      headers: await setHeaders()
+      headers
     }
 
-    const data = await axios
-      .post(url, body, params)
-      .then(r => r.data)
-      .catch(console.log)
-
-    return data.channellist.map(item => {
-      return {
-        lang: 'de',
-        site_id: item.contentId,
-        name: item.name
+    try {
+      // Add adaptive delay before channels request
+      const delay = calculateAdaptiveDelay()
+      if (delay > 0) {
+        console.log(`Adding ${delay}ms delay before channels request`)
+        await sleep(delay)
       }
-    })
+      
+      const data = await axios
+        .post(url, body, params)
+        .then(r => r.data)
+        .catch(error => {
+          console.error('Failed to fetch channels:', error.message)
+          recordRequestFailure()
+          return { channellist: [] }
+        })
+      
+      if (!data || !data.channellist || data.channellist.length === 0) {
+        console.warn('No channel data received from API')
+        recordRequestFailure()
+        return []
+      }
+      
+      recordRequestSuccess()
+      console.log(`Successfully fetched ${data.channellist.length} channels`)
+      
+      return data.channellist.map(item => {
+        return {
+          lang: 'de',
+          site_id: item.contentId,
+          name: item.name
+        }
+      })
+    } catch (error) {
+      console.error('Failed to fetch channels:', error.message)
+      recordRequestFailure()
+      return []
+    }
   }
 }
 
