@@ -100,7 +100,7 @@ function calculateAdaptiveDelay() {
 
 module.exports = {
   site: 'web.magentatv.de',
-  days: 2,
+  days: 1,
   url: 'https://api.prod.sngtv.magentatv.de/EPG/JSON/PlayBillList',
   // Dynamic delay based on throttling state
   get delay() {
