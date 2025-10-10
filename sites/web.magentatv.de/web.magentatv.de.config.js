@@ -187,6 +187,7 @@ module.exports = {
           // Validate and clean enriched data for Jellyfin compatibility
           const program = {
             title: item.name || 'Unknown Title',
+            titles: [{ lang: 'de', value: item.name || 'Unknown Title' }], // Add language info for grouping
             description: enhancedData.description || item.introduce || '',
             images: [...(images || []), ...(enhancedData.images || [])],
             category: [...(parseCategory(item) || []), ...(enhancedData.categories || [])],
@@ -226,6 +227,7 @@ module.exports = {
           try {
             const minimalProgram = {
               title: item.name || 'Unknown Title',
+              titles: [{ lang: 'de', value: item.name || 'Unknown Title' }], // Add language info for grouping
               description: item.introduce || '',
               start: parseStart(item),
               stop: parseStop(item),
