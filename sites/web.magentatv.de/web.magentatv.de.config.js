@@ -8,6 +8,12 @@ let X_CSRFTOKEN
 let Cookie
 const cookiesToExtract = ['JSESSIONID', 'CSESSIONID', 'CSRFSESSION']
 
+// Token refresh tracking
+let tokenRefreshTime = 0
+const TOKEN_REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes in milliseconds
+let requestCount = 0
+const MAX_REQUESTS_PER_TOKEN = 10 // Refresh token after 10 requests
+
 // TMDB API Key
 const tmdbBearer = process.env.TMDBBEARER
 const debugMode = process.env.TMDB_DEBUG === 'true'
@@ -74,7 +80,9 @@ module.exports = {
       // Initialize stats on first run
       if (enrichmentStats.startTime === null) {
         enrichmentStats.startTime = Date.now()
-        console.log('🎬 Starting TMDB enrichment with smart lookup...')
+        if (tmdbBearer) {
+          console.log('🎬 Starting TMDB enrichment...')
+        }
       }
       
       // Check for throttling (empty program list)
@@ -84,11 +92,14 @@ module.exports = {
         // If this is a throttled response, we could retry here
         // But since we're in the parser, we'll just return empty and let the global delay system handle it
         return programs
-      } else {
-        console.log(`Successfully parsed ${items.length} programs for channel ${channel?.site_id}`)
       }
       
       enrichmentStats.totalPrograms += items.length
+      
+      // Log progress every 50 programs processed
+      if (enrichmentStats.totalPrograms % 50 === 0 && tmdbBearer) {
+        console.log(`📊 Processed ${enrichmentStats.totalPrograms} programs, ${enrichmentStats.imdbBasedSuccess + enrichmentStats.titleBasedSuccess} enriched`)
+      }
       
       for (const item of items) {
         try {
@@ -401,36 +412,20 @@ async function parseEnhancedTMDBData(item) {
     
     // If no IMDB ID or IMDB lookup failed, try smart title-based search
     const confidence = calculateSearchConfidence(item)
-    if (debugMode) {
-      console.log(`🎯 Confidence for "${item.name}": ${confidence.score} (${confidence.isMovie ? 'movie' : confidence.isTVShow ? 'TV' : 'unknown'})`)
-    }
     if (confidence.score < 0.6) {
       if (confidence.score === 0) {
         if (confidence.reason === 'non-entertainment') {
           enrichmentStats.skippedNonEntertainment++
-          if (debugMode) {
-            console.log(`⏭️ Skipping "${item.name}" - non-entertainment`)
-          }
         } else {
           enrichmentStats.skippedNonContent++
-          if (debugMode) {
-            console.log(`⏭️ Skipping "${item.name}" - non-content`)
-          }
         }
       } else {
         enrichmentStats.skippedLowConfidence++
-        if (debugMode) {
-          console.log(`⏭️ Skipping "${item.name}" - low confidence (${confidence.score})`)
-        }
       }
       return {}
     }
     
     enrichmentStats.titleBasedAttempts++
-    
-    if (debugMode) {
-      console.log(`🚀 Attempting title-based search for "${item.name}" (confidence: ${confidence.score})`)
-    }
     
     // Try different search strategies based on content type
     if (confidence.isMovie) {
@@ -544,12 +539,10 @@ async function searchAndEnrichMovie(item) {
     const searchResults = await searchTMDBMovies(item.name, year)
     
     if (!searchResults || searchResults.length === 0) {
-      console.log(`No TMDB movie results for "${item.name}"`)
       return {}
     }
     
     const bestMatch = searchResults[0] // First result is most relevant
-    console.log(`Found TMDB movie match: "${bestMatch.title}" (${bestMatch.release_date}) for "${item.name}"`)
     
     // Fetch detailed movie information
     const movieDetails = await getTMDBMovieDetails(bestMatch.id)
@@ -573,12 +566,10 @@ async function searchAndEnrichTVShow(item) {
     const searchResults = await searchTMDBTVShows(item.name, year)
     
     if (!searchResults || searchResults.length === 0) {
-      console.log(`No TMDB TV results for "${item.name}"`)
       return {}
     }
     
     const bestMatch = searchResults[0] // First result is most relevant
-    console.log(`Found TMDB TV match: "${bestMatch.name}" (${bestMatch.first_air_date}) for "${item.name}"`)
     
     // Fetch detailed TV show and episode information
     const [seriesDetails, episodeDetails] = await Promise.all([
@@ -961,7 +952,6 @@ let imdbIdTmdbMap = new Map()
 
 async function getTMDBSeriesId(imdbId) {
   if (!imdbId || !tmdbBearer) {
-    console.log('Missing imdbId or TMDB bearer token')
     return null
   }
 
@@ -993,7 +983,6 @@ async function getTMDBSeriesId(imdbId) {
     } else if (res.data.movie_results?.length > 0 && res.data.movie_results[0].id) {
       imdbIdTmdbMap.set(imdbId, res.data.movie_results[0].id)
     } else {
-      console.log('No TMDB results found for imdbId:', imdbId)
       imdbIdTmdbMap.set(imdbId, null) // Cache "not found" result
     }
   } catch (error) {
@@ -1015,7 +1004,6 @@ let tmdbMovieDetailsMap = new Map()
 
 async function getTMDBEpisodeId(tmdbId, seasonNum, episodeNum) {
   if (!tmdbId || !seasonNum || !episodeNum || !tmdbBearer) {
-    console.log('Missing required parameters for TMDB episode lookup')
     return null
   }
 
@@ -1043,10 +1031,14 @@ async function getTMDBEpisodeId(tmdbId, seasonNum, episodeNum) {
     if (res.data && res.data.id) {
       tmdbEpisodeIdMap.set(cacheKey, res.data.id)
     } else {
-      console.log('No TMDB episode ID found for:', { tmdbId, seasonNum, episodeNum })
       tmdbEpisodeIdMap.set(cacheKey, null) // Cache "not found" result
     }
   } catch (error) {
+    // 404 errors are anticipated when episode doesn't exist in TMDB
+    if (error.response?.status === 404) {
+      tmdbEpisodeIdMap.set(cacheKey, null)
+      return null
+    }
     console.error('Error fetching TMDB episode ID:', error.message)
     // Don't cache API errors - allow retry on next call
     // Return null but don't cache the error
@@ -1091,6 +1083,11 @@ async function getTMDBEpisodeDetails(tmdbId, seasonNum, episodeNum) {
       tmdbEpisodeDetailsMap.set(cacheKey, null)
     }
   } catch (error) {
+    // 404 errors are anticipated when episode doesn't exist in TMDB
+    if (error.response?.status === 404) {
+      tmdbEpisodeDetailsMap.set(cacheKey, null)
+      return null
+    }
     console.error('Error fetching TMDB episode details:', error.message)
     return null
   }
@@ -1132,6 +1129,11 @@ async function getTMDBSeriesDetails(tmdbId) {
       tmdbSeriesDetailsMap.set(tmdbId, null)
     }
   } catch (error) {
+    // 404 errors are anticipated when series doesn't exist in TMDB
+    if (error.response?.status === 404) {
+      tmdbSeriesDetailsMap.set(tmdbId, null)
+      return null
+    }
     console.error('Error fetching TMDB series details:', error.message)
     return null
   }
@@ -1171,11 +1173,17 @@ function genMAC(){
 }
 
 async function fetchCookieAndToken() {
-  // Only fetch the cookies and csrfToken if they are not already set
-  if (X_CSRFTOKEN && Cookie) {
+  const now = Date.now()
+  const shouldRefresh = !X_CSRFTOKEN || !Cookie || 
+                      (now - tokenRefreshTime) > TOKEN_REFRESH_INTERVAL ||
+                      requestCount >= MAX_REQUESTS_PER_TOKEN
+
+  if (!shouldRefresh) {
     return
   }
 
+  console.log('🔄 Refreshing CSRF token and cookies...')
+  
   try {
     const mac = genMAC()
     const response = await axios.request({
@@ -1209,14 +1217,19 @@ async function fetchCookieAndToken() {
 
     X_CSRFTOKEN = response.data.csrfToken
     Cookie = extractedCookies.join(' ')
+    tokenRefreshTime = now
+    requestCount = 0
+    
+    console.log('✅ CSRF token and cookies refreshed successfully')
 
   } catch(error) {
-    console.error(error)
+    console.error('❌ Failed to refresh CSRF token and cookies:', error.message)
   }
 }
 
 async function setHeaders() {
   await fetchCookieAndToken()
+  requestCount++
 
   return { X_CSRFTOKEN, Cookie }
 }
@@ -1348,6 +1361,11 @@ async function getTMDBMovieDetails(movieId) {
       return null
     }
   } catch (error) {
+    // 404 errors are anticipated when movie doesn't exist in TMDB
+    if (error.response?.status === 404) {
+      tmdbMovieDetailsMap.set(movieId, null)
+      return null
+    }
     console.error('Error fetching TMDB movie details:', error.message)
     return null
   }
@@ -1360,54 +1378,46 @@ function printEnrichmentSummary() {
   const duration = Date.now() - enrichmentStats.startTime
   const durationSeconds = (duration / 1000).toFixed(1)
   
-  console.log('\n' + '='.repeat(80))
-  console.log('🎬 TMDB ENRICHMENT SUMMARY')
-  console.log('='.repeat(80))
-  console.log(`⏱️  Duration: ${durationSeconds}s`)
-  console.log(`📊 Total Programs Processed: ${enrichmentStats.totalPrograms}`)
-  console.log('')
-  
   if (tmdbBearer) {
-    console.log('🔍 ENRICHMENT ATTEMPTS:')
-    console.log(`   • IMDB-based attempts: ${enrichmentStats.imdbBasedAttempts}`)
-    console.log(`   • Title-based attempts: ${enrichmentStats.titleBasedAttempts}`)
-    console.log(`   • Movie searches: ${enrichmentStats.movieSearches}`)
-    console.log(`   • TV show searches: ${enrichmentStats.tvSearches}`)
-    console.log('')
-    
-    console.log('✅ SUCCESSFUL MATCHES:')
-    console.log(`   • IMDB-based success: ${enrichmentStats.imdbBasedSuccess} (${enrichmentStats.imdbBasedAttempts > 0 ? ((enrichmentStats.imdbBasedSuccess / enrichmentStats.imdbBasedAttempts) * 100).toFixed(1) : 0}%)`)
-    console.log(`   • Title-based success: ${enrichmentStats.titleBasedSuccess} (${enrichmentStats.titleBasedAttempts > 0 ? ((enrichmentStats.titleBasedSuccess / enrichmentStats.titleBasedAttempts) * 100).toFixed(1) : 0}%)`)
-    console.log(`   • Movie matches: ${enrichmentStats.movieMatches}`)
-    console.log(`   • TV show matches: ${enrichmentStats.tvMatches}`)
-    console.log('')
-    
-    console.log('⏭️  SKIPPED:')
-    console.log(`   • Low confidence: ${enrichmentStats.skippedLowConfidence}`)
-    console.log(`   • Non-content (news, weather, etc.): ${enrichmentStats.skippedNonContent}`)
-    console.log(`   • Non-entertainment (docs, politics, etc.): ${enrichmentStats.skippedNonEntertainment}`)
-    console.log('')
-    
-    console.log('🌐 API USAGE:')
-    console.log(`   • API calls made: ${enrichmentStats.apiCalls}`)
-    console.log(`   • Cache hits: ${enrichmentStats.cacheHits}`)
-    console.log(`   • Cache hit rate: ${enrichmentStats.apiCalls + enrichmentStats.cacheHits > 0 ? ((enrichmentStats.cacheHits / (enrichmentStats.apiCalls + enrichmentStats.cacheHits)) * 100).toFixed(1) : 0}%`)
-    console.log('')
-    
-    if (enrichmentStats.errors > 0) {
-      console.log(`❌ Errors: ${enrichmentStats.errors}`)
-    }
-    
     const totalEnriched = enrichmentStats.imdbBasedSuccess + enrichmentStats.titleBasedSuccess
     const enrichmentRate = enrichmentStats.totalPrograms > 0 ? ((totalEnriched / enrichmentStats.totalPrograms) * 100).toFixed(1) : 0
-    console.log(`🎯 Overall enrichment rate: ${enrichmentRate}% (${totalEnriched}/${enrichmentStats.totalPrograms})`)
+    const cacheHitRate = enrichmentStats.apiCalls + enrichmentStats.cacheHits > 0 ? ((enrichmentStats.cacheHits / (enrichmentStats.apiCalls + enrichmentStats.cacheHits)) * 100).toFixed(1) : 0
     
-  } else {
-    console.log('⚠️  TMDB bearer token not configured - no enrichment attempted')
-    console.log('   Set TMDBBEARER environment variable to enable enrichment')
+    console.log(`\n🎬 TMDB Summary: ${enrichmentRate}% enriched (${totalEnriched}/${enrichmentStats.totalPrograms}) | ${enrichmentStats.apiCalls} API calls | ${cacheHitRate}% cache hit rate | ${durationSeconds}s`)
+  }
+}
+
+// Adaptive delay and throttling management
+let consecutiveFailures = 0
+let lastRequestTime = 0
+const BASE_DELAY = 1000 // 1 second base delay
+const MAX_DELAY = 30000 // 30 seconds max delay
+
+function calculateAdaptiveDelay() {
+  if (consecutiveFailures === 0) {
+    return 0
   }
   
-  console.log('='.repeat(80))
+  // Exponential backoff with jitter
+  const delay = Math.min(BASE_DELAY * Math.pow(2, consecutiveFailures), MAX_DELAY)
+  const jitter = Math.random() * 1000 // Add up to 1 second of jitter
+  return Math.floor(delay + jitter)
+}
+
+function recordRequestFailure() {
+  consecutiveFailures++
+  console.warn(`Request failed. Consecutive failures: ${consecutiveFailures}`)
+}
+
+function recordRequestSuccess() {
+  if (consecutiveFailures > 0) {
+    console.log(`Request succeeded. Resetting failure count from ${consecutiveFailures}`)
+    consecutiveFailures = 0
+  }
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 // Export the summary function so it can be called from outside
