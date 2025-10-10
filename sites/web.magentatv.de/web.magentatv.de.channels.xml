@@ -117,13 +117,13 @@
   <channel site="web.magentatv.de" lang="de" xmltv_id="arte.de" site_id="394">ARTE</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="automotorundsportchannel.de" site_id="108">auto motor und sport</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="AXNBlack.de" site_id="110">AXN Black</channel>
-  <channel site="web.magentatv.de" lang="de" xmltv_id="BabyTV.uk" site_id="109">Baby TV</channel>
+  <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="BabyTV.uk" site_id="109">Baby TV</channel> -->
   <channel site="web.magentatv.de" lang="de" xmltv_id="BadenTV.de" site_id="3685">Baden TV</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="BadenTVSud.de" site_id="3749">Baden TV Süd</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="BBCNews.uk@Europe" site_id="454">BBC News</channel>
   <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="BeateUhseTV.de" site_id="107">Beate-Uhse.TV (Sky)</channel> -->
-  <channel site="web.magentatv.de" lang="de" xmltv_id="beINIZ.tr" site_id="3826">beIN iZ</channel>
-  <channel site="web.magentatv.de" lang="de" xmltv_id="beINMoviesTurk.tr" site_id="440">beIN Movies Turk</channel>
+  <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="beINIZ.tr" site_id="3826">beIN iZ</channel> -->
+  <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="beINMoviesTurk.tr" site_id="440">beIN Movies Turk</channel> -->
   <channel site="web.magentatv.de" lang="de" xmltv_id="Bergblick.de" site_id="45">Bergblick</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="BibelTV.de" site_id="485">Bibel TV</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="Bild.de" site_id="5077">BILD</channel>
@@ -133,7 +133,7 @@
   <channel site="web.magentatv.de" lang="de" xmltv_id="BRFernsehenNord.de" site_id="175">BR Fernsehen Nord</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="BRFernsehenSud.de" site_id="407">BR Fernsehen Süd</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="CartoonNetworkCEE.uk@Germany" site_id="126">Cartoon Network</channel>
-  <channel site="web.magentatv.de" lang="de" xmltv_id="CemTV.tr" site_id="4377">CEM TV</channel>
+  <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="CemTV.tr" site_id="4377">CEM TV</channel> -->
   <channel site="web.magentatv.de" lang="de" xmltv_id="Channel21.de" site_id="5176">CHANNEL21</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="CNNInternational.us@MENA" site_id="399">CNN International</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="ComedyCentral.de" site_id="50">Comedy Central</channel>
@@ -174,7 +174,7 @@
   <channel site="web.magentatv.de" lang="de" xmltv_id="kabeleins.de" site_id="405">Kabel Eins</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="kabeleinsClassics.de" site_id="157">Kabel Eins CLASSICS</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="kabeleinsDoku.de" site_id="573">Kabel Eins Doku</channel>
-  <channel site="web.magentatv.de" lang="de" xmltv_id="Kanal7.tr" site_id="29">Kanal 7</channel>
+  <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="Kanal7.tr" site_id="29">Kanal 7</channel> -->
   <channel site="web.magentatv.de" lang="de" xmltv_id="KiKA.de" site_id="387">KiKA</channel>
   <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="KinoweltTV.de" site_id="137">KinoweltTV</channel> -->
   <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="KTV.at" site_id="487">K-TV</channel> -->
@@ -224,9 +224,9 @@
   <channel site="web.magentatv.de" lang="de" xmltv_id="ProSiebenMaxx.de" site_id="396">ProSieben MAXX</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="QVC.de" site_id="446">QVC</channel>
   <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="RadioBremenFernsehen.de" site_id="368">Radio Bremen TV</channel> -->
-  <channel site="web.magentatv.de" lang="de" xmltv_id="Rai1.it" site_id="43">Rai 1</channel>
-  <channel site="web.magentatv.de" lang="de" xmltv_id="Rai2.it" site_id="46">Rai 2</channel>
-  <channel site="web.magentatv.de" lang="de" xmltv_id="Rai3.it" site_id="210">Rai 3</channel>
+  <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="Rai1.it" site_id="43">Rai 1</channel> -->
+  <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="Rai2.it" site_id="46">Rai 2</channel> -->
+  <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="Rai3.it" site_id="210">Rai 3</channel> -->
   <!-- <channel site="web.magentatv.de" lang="de" xmltv_id="" site_id="242">rbb fernsehen Brandenburg</channel> -->
   <channel site="web.magentatv.de" lang="de" xmltv_id="rbbFernsehenBerlin.de" site_id="384">rbb fernsehen Berlin</channel>
   <channel site="web.magentatv.de" lang="de" xmltv_id="RedBullTV.at" site_id="5027">Red Bull TV</channel>
