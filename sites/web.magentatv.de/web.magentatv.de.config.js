@@ -134,7 +134,7 @@ module.exports = {
             title: item.name || 'Unknown Title',
             titles: [{ lang: 'de', value: item.name || 'Unknown Title' }], // Add language info for grouping
             description: enhancedData.description || item.introduce || '',
-            images: [...(images || []), ...(enhancedData.images || [])],
+            images: mergeImagesWithoutDuplicates(images, enhancedData.images),
             category: [...(parseCategory(item) || []), ...(enhancedData.categories || [])],
             start: parseStart(item),
             stop: parseStop(item),
@@ -946,6 +946,28 @@ function parseImages(item) {
       }
     }
   )
+}
+
+function mergeImagesWithoutDuplicates(originalImages, tmdbImages) {
+  if (!originalImages && !tmdbImages) return []
+  if (!originalImages) return tmdbImages || []
+  if (!tmdbImages) return originalImages || []
+  
+  // Create a map to track images by type
+  const imageMap = new Map()
+  
+  // First, add all original images
+  originalImages.forEach(img => {
+    imageMap.set(img.type, img)
+  })
+  
+  // Then, replace with TMDB images of the same type (TMDB images take precedence)
+  tmdbImages.forEach(img => {
+    imageMap.set(img.type, img)
+  })
+  
+  // Convert map back to array
+  return Array.from(imageMap.values())
 }
 
 let imdbIdTmdbMap = new Map()
