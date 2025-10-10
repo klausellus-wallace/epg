@@ -32,80 +32,16 @@ const enrichmentStats = {
   startTime: null
 }
 
-// Throttling configuration
-const THROTTLING_CONFIG = {
-  requestDelay: 500 // 500ms delay between requests
-}
-
-// Request tracking for adaptive delays
-let requestTracker = {
-  recentRequests: [],
-  successCount: 0,
-  failureCount: 0
-}
 
 dayjs.extend(utc)
 dayjs.extend(customParseFormat)
 
-// Utility functions for throttling and retry logic
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-function recordRequestSuccess() {
-  requestTracker.successCount++
-  requestTracker.recentRequests.push({ timestamp: Date.now(), success: true })
-  
-  // Keep only last 10 requests for tracking
-  if (requestTracker.recentRequests.length > 10) {
-    requestTracker.recentRequests = requestTracker.recentRequests.slice(-10)
-  }
-}
-
-function recordRequestFailure() {
-  requestTracker.failureCount++
-  requestTracker.recentRequests.push({ timestamp: Date.now(), success: false })
-  
-  // Keep only last 10 requests for tracking
-  if (requestTracker.recentRequests.length > 10) {
-    requestTracker.recentRequests = requestTracker.recentRequests.slice(-10)
-  }
-}
-
-function calculateAdaptiveDelay() {
-  const now = Date.now()
-  const recentRequests = requestTracker.recentRequests.filter(
-    req => now - req.timestamp < 60000 // Last minute
-  )
-  
-  const recentFailures = recentRequests.filter(req => !req.success).length
-  const recentSuccesses = recentRequests.filter(req => req.success).length
-  
-  // If we have recent failures, increase delay more aggressively for multi-day scenarios
-  if (recentFailures > 0) {
-    const failureRate = recentFailures / (recentFailures + recentSuccesses)
-    // More aggressive scaling for multi-day usage
-    const multiplier = recentFailures > 3 ? 4 : 2 // Higher multiplier for many failures
-    return THROTTLING_CONFIG.requestDelay * (1 + failureRate * multiplier)
-  }
-  
-  // If we have many recent successes, we can reduce delay slightly
-  if (recentSuccesses > 5) {
-    return Math.max(THROTTLING_CONFIG.requestDelay * 0.5, 200)
-  }
-  
-  return THROTTLING_CONFIG.requestDelay
-}
 
 
 module.exports = {
   site: 'web.magentatv.de',
   days: 2,
   url: 'https://api.prod.sngtv.magentatv.de/EPG/JSON/PlayBillList',
-  // Dynamic delay based on throttling state
-  get delay() {
-    return calculateAdaptiveDelay()
-  },
   request: {
     method: 'POST',
     async headers() {
@@ -144,13 +80,11 @@ module.exports = {
       // Check for throttling (empty program list)
       if (items.length === 0) {
         console.warn(`Empty program list for channel ${channel?.site_id} on ${date} - possible throttling`)
-        recordRequestFailure()
         
         // If this is a throttled response, we could retry here
-        // But since we're in the parser, we'll just return empty and let the delay system handle it
+        // But since we're in the parser, we'll just return empty and let the global delay system handle it
         return programs
       } else {
-        recordRequestSuccess()
         console.log(`Successfully parsed ${items.length} programs for channel ${channel?.site_id}`)
       }
       
